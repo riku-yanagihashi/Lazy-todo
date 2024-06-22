@@ -1,1 +1,1 @@
-/mnt/c/Users/aotom/Desktop/github/rust/CLI-ToDoer/todo_cli/target/release/td: /mnt/c/Users/aotom/Desktop/github/rust/CLI-ToDoer/todo_cli/src/main.rs
+/home/riku/github/CLI-ToDoer/todo_cli/target/release/td: /home/riku/github/CLI-ToDoer/todo_cli/src/main.rs
