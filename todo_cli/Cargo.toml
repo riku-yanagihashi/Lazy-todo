@@ -1,0 +1,18 @@
+[package]
+name = "cli_todo_app"
+version = "0.1.0"
+authors = ["Your Name <your.email@example.com>"]
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tui = { version = "0.16", features = ["crossterm"] }
+crossterm = "0.22"
+
+[[bin]]
+name = "td"
+path = "src/main.rs"
+
+[package.metadata.cargo-install]
+bin = ["td"]
