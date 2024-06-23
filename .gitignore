@@ -16,4 +16,6 @@ node_modules/
 
 # Other files or directories to ignore
 # (add any other specific files or directories you want to ignore)
+
+# Stop tracking todo_list.json
 todo_cli/todo_list.json
