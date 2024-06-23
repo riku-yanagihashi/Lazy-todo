@@ -20,3 +20,5 @@ node_modules/
 
 # Stop tracking todo_list.json
 todo_cli/todo_list.json
+
+todo_list.json
