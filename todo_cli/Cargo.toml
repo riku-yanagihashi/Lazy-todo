@@ -1,7 +1,7 @@
 [package]
 name = "cli_todo_app"
 version = "0.1.0"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["riku-yanagihashi"]
 edition = "2021"
 
 [dependencies]
