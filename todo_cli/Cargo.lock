@@ -27,16 +27,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "cli_todo_app"
-version = "0.1.0"
-dependencies = [
- "crossterm 0.22.1",
- "serde",
- "serde_json",
- "tui",
-]
-
-[[package]]
 name = "crossterm"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -306,6 +296,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "td"
+version = "0.1.0"
+dependencies = [
+ "crossterm 0.22.1",
+ "serde",
+ "serde_json",
+ "tui",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 [package]
-name = "cli_todo_app"
+name = "td"
 version = "0.1.0"
 authors = ["riku-yanagihashi"]
 edition = "2021"
