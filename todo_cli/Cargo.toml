@@ -1,5 +1,5 @@
 [package]
-name = "td"
+name = "ltd"
 version = "0.1.0"
 authors = ["riku-yanagihashi"]
 edition = "2021"
@@ -11,8 +11,8 @@ tui = { version = "0.16", features = ["crossterm"] }
 crossterm = "0.22"
 
 [[bin]]
-name = "td"
+name = "ltd"
 path = "src/main.rs"
 
 [package.metadata.cargo-install]
-bin = ["td"]
+bin = ["ltd"]

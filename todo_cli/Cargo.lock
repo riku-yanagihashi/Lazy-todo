@@ -114,6 +114,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
 
 [[package]]
+name = "ltd"
+version = "0.1.0"
+dependencies = [
+ "crossterm 0.22.1",
+ "serde",
+ "serde_json",
+ "tui",
+]
+
+[[package]]
 name = "mio"
 version = "0.7.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -296,16 +306,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "td"
-version = "0.1.0"
-dependencies = [
- "crossterm 0.22.1",
- "serde",
- "serde_json",
- "tui",
 ]
 
 [[package]]
