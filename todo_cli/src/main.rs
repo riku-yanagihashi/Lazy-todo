@@ -60,6 +60,10 @@ enum InputMode {
     AddingContent,
     AddingPriority,
     AddingDeadline,
+    EditingTitle(usize),
+    EditingContent(usize),
+    EditingPriority(usize),
+    EditingDeadline(usize),
 }
 
 fn main() -> Result<(), io::Error> {
@@ -114,12 +118,12 @@ fn main() -> Result<(), io::Error> {
 
             let instructions = match input_mode {
                 InputMode::Normal => {
-                    String::from("q: Quit | a: Add | d: Delete | e: Edit | Enter: Toggle Done")
+                    String::from("q: Quit | a: Add | d: Delete | e: Edit | j: Down | k: Up | Enter: Toggle Done")
                 }
-                InputMode::AddingTitle => format!("Enter title: {}", input_title),
-                InputMode::AddingContent => format!("Enter content: {}", input_content),
-                InputMode::AddingPriority => format!("Enter priority: {}", input_priority),
-                InputMode::AddingDeadline => format!("Enter deadline: {}", input_deadline),
+                InputMode::AddingTitle | InputMode::EditingTitle(_) => format!("Enter title: {}", input_title),
+                InputMode::AddingContent | InputMode::EditingContent(_) => format!("Enter content: {}", input_content),
+                InputMode::AddingPriority | InputMode::EditingPriority(_) => format!("Enter priority: {}", input_priority),
+                InputMode::AddingDeadline | InputMode::EditingDeadline(_) => format!("Enter deadline: {}", input_deadline),
             };
             let instructions = Paragraph::new(instructions)
                 .style(Style::default().fg(Color::White).bg(Color::Black))
@@ -154,11 +158,25 @@ fn main() -> Result<(), io::Error> {
                         KeyCode::Char('e') => {
                             if let Some(selected) = state.selected() {
                                 if !todos.is_empty() {
-                                    input_mode = InputMode::AddingTitle;
+                                    input_mode = InputMode::EditingTitle(selected);
                                     input_title = todos[selected].title.clone();
                                     input_content = todos[selected].content.clone();
                                     input_priority = todos[selected].priority.clone();
                                     input_deadline = todos[selected].deadline.clone();
+                                }
+                            }
+                        }
+                        KeyCode::Char('j') => {
+                            if let Some(selected) = state.selected() {
+                                if selected < todos.len() - 1 {
+                                    state.select(Some(selected + 1));
+                                }
+                            }
+                        }
+                        KeyCode::Char('k') => {
+                            if let Some(selected) = state.selected() {
+                                if selected > 0 {
+                                    state.select(Some(selected - 1));
                                 }
                             }
                         }
@@ -167,20 +185,6 @@ fn main() -> Result<(), io::Error> {
                                 if !todos.is_empty() {
                                     todos[selected].done = !todos[selected].done;
                                     save_todos(&todos);
-                                }
-                            }
-                        }
-                        KeyCode::Up => {
-                            if let Some(selected) = state.selected() {
-                                if selected > 0 {
-                                    state.select(Some(selected - 1));
-                                }
-                            }
-                        }
-                        KeyCode::Down => {
-                            if let Some(selected) = state.selected() {
-                                if selected < todos.len() - 1 {
-                                    state.select(Some(selected + 1));
                                 }
                             }
                         }
@@ -244,13 +248,7 @@ fn main() -> Result<(), io::Error> {
                     KeyCode::Enter => {
                         if !input_title.is_empty() {
                             let new_todo = Todo::new(input_title.clone(), input_content.clone(), input_priority.clone(), input_deadline.clone());
-                            if input_mode == InputMode::AddingDeadline {
-                                todos.push(new_todo);
-                            } else {
-                                if let Some(selected) = state.selected() {
-                                    todos[selected] = new_todo;
-                                }
-                            }
+                            todos.push(new_todo);
                             save_todos(&todos);
                             input_mode = InputMode::Normal;
                             input_title.clear();
@@ -258,6 +256,94 @@ fn main() -> Result<(), io::Error> {
                             input_priority.clear();
                             input_deadline.clear();
                         }
+                    }
+                    KeyCode::Char(c) => {
+                        input_deadline.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        input_deadline.pop();
+                    }
+                    KeyCode::Esc => {
+                        input_mode = InputMode::Normal;
+                        input_title.clear();
+                        input_content.clear();
+                        input_priority.clear();
+                        input_deadline.clear();
+                    }
+                    _ => {}
+                },
+                InputMode::EditingTitle(index) => match key.code {
+                    KeyCode::Enter => {
+                        if !input_title.is_empty() {
+                            todos[index].title = input_title.clone();
+                            input_mode = InputMode::EditingContent(index);
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        input_title.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        input_title.pop();
+                    }
+                    KeyCode::Esc => {
+                        input_mode = InputMode::Normal;
+                        input_title.clear();
+                        input_content.clear();
+                        input_priority.clear();
+                        input_deadline.clear();
+                    }
+                    _ => {}
+                },
+                InputMode::EditingContent(index) => match key.code {
+                    KeyCode::Enter => {
+                        todos[index].content = input_content.clone();
+                        input_mode = InputMode::EditingPriority(index);
+                    }
+                    KeyCode::Char(c) => {
+                        input_content.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        input_content.pop();
+                    }
+                    KeyCode::Esc => {
+                        input_mode = InputMode::Normal;
+                        input_title.clear();
+                        input_content.clear();
+                        input_priority.clear();
+                        input_deadline.clear();
+                    }
+                    _ => {}
+                },
+                InputMode::EditingPriority(index) => match key.code {
+                    KeyCode::Enter => {
+                        todos[index].priority = input_priority.clone();
+                        input_mode = InputMode::EditingDeadline(index);
+                    }
+                    KeyCode::Char(c) => {
+                        input_priority.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        input_priority.pop();
+                    }
+                    KeyCode::Esc => {
+                        input_mode = InputMode::Normal;
+                        input_title.clear();
+                        input_content.clear();
+                        input_priority.clear();
+                        input_deadline.clear();
+                    }
+                    _ => {}
+                },
+                InputMode::EditingDeadline(index) => match key.code {
+                    KeyCode::Enter => {
+                        todos[index].deadline = input_deadline.clone();
+                        todos[index].date_time = Utc::now().to_rfc3339();
+                        save_todos(&todos);
+                        input_mode = InputMode::Normal;
+                        input_title.clear();
+                        input_content.clear();
+                        input_priority.clear();
+                        input_deadline.clear();
                     }
                     KeyCode::Char(c) => {
                         input_deadline.push(c);
