@@ -153,7 +153,7 @@ fn main() -> Result<(), io::Error> {
 
             let block = Block::default()
                 .borders(Borders::ALL)
-                .title("Todo List");
+                .title("Lazy Todo");
             f.render_widget(block, size);
 
             let items: Vec<ListItem> = todos
