@@ -107,8 +107,30 @@ fn main() -> Result<(), io::Error> {
             let items: Vec<ListItem> = todos
                 .iter()
                 .map(|todo| {
-                    let lines = vec![Spans::from(Span::raw(&todo.title))];
-                    ListItem::new(lines).style(Style::default())
+                    let status = if todo.done {
+                        Span::styled("✔", Style::default().fg(Color::Green))
+                    } else {
+                        Span::styled("✘", Style::default().fg(Color::Red))
+                    };
+                    let priority = match todo.priority.as_str() {
+                        "low" => Span::styled(" ●", Style::default().fg(Color::Green)),
+                        "medium" => Span::styled(" ●", Style::default().fg(Color::Yellow)),
+                        "high" => Span::styled(" ●", Style::default().fg(Color::Red)),
+                        _ => Span::raw(""),
+                    };
+                    let deadline = if todo.deadline.is_empty() {
+                        Span::raw("")
+                    } else {
+                        Span::raw(format!(" | {}", todo.deadline))
+                    };
+                    let content = Spans::from(vec![
+                        status,
+                        Span::raw(": "),
+                        Span::raw(&todo.title),
+                        priority,
+                        deadline,
+                    ]);
+                    ListItem::new(content).style(Style::default())
                 })
                 .collect();
             let todos_list = List::new(items)
