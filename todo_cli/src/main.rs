@@ -1,283 +1,282 @@
-use serde::{Serialize, Deserialize}; // SerdeライブラリのSerializeとDeserializeをインポート
-use std::fs::File; // ファイル操作のための標準ライブラリ
-use std::io::{self, Read, Write}; // 入出力操作のための標準ライブラリ
-use serde_json::Result as SerdeResult; // Serde JSONの結果型をインポートして別名をつける
-use crossterm::{ // Crosstermライブラリをインポート
-    event::{self, DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent, KeyModifiers},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use std::io::{stdout, Write as IoWrite}; // 標準出力と書き込み操作をインポート
-use tui::{ // TUIライブラリをインポート
-    backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
-    Terminal,
-};
+use crossterm::event::{self, Event, KeyCode};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::ExecutableCommand;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::io;
+use std::path::Path;
+use tui::backend::CrosstermBackend;
+use tui::layout::{Constraint, Direction, Layout};
+use tui::style::{Color, Style};
+use tui::text::{Span, Spans};
+use tui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use tui::Terminal;
+use tui::widgets::ListState;
+use chrono::prelude::*;
 
-// Todo項目を定義する構造体。タスクID、タスク内容、完了状態を持つ
-#[derive(Serialize, Deserialize, Debug)]
-struct TodoItem {
-    id: u32,
-    task: String,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct Todo {
+    title: String,
+    content: String,
+    priority: String,
+    date_time: String,
+    deadline: String,
     done: bool,
 }
 
-const FILE_PATH: &str = "todo_list.json"; // JSONファイルのパス
-
-// JSONファイルからTodo項目を読み込む関数
-fn read_todos() -> SerdeResult<Vec<TodoItem>> {
-    let mut file = match File::open(FILE_PATH) {
-        Ok(file) => file, // ファイルが存在する場合は開く
-        Err(_) => File::create(FILE_PATH).expect("Failed to create file"), // ファイルが存在しない場合は新しく作成する
-    };
-    let mut data = String::new();
-    file.read_to_string(&mut data).expect("Failed to read file"); // ファイル内容を文字列に読み込む
-    if data.is_empty() {
-        Ok(vec![]) // ファイルが空の場合は空のベクタを返す
-    } else {
-        serde_json::from_str(&data) // JSON文字列をデシリアライズして返す
+impl Todo {
+    fn new(title: String, content: String, priority: String, deadline: String) -> Self {
+        Todo {
+            title,
+            content,
+            priority,
+            date_time: Utc::now().to_rfc3339(),
+            deadline,
+            done: false,
+        }
     }
 }
 
-// Todo項目をJSONファイルに書き込む関数
-fn write_todos(todos: &Vec<TodoItem>) -> io::Result<()> {
-    let data = serde_json::to_string(todos).expect("Failed to serialize todos"); // Todo項目をJSON文字列にシリアライズ
-    let mut file = File::create(FILE_PATH)?; // ファイルを新しく作成
-    file.write_all(data.as_bytes()) // ファイルに書き込む
+const DB_FILE: &str = "todos.json";
+
+fn load_todos() -> Vec<Todo> {
+    if Path::new(DB_FILE).exists() {
+        let data = fs::read_to_string(DB_FILE).expect("Unable to read file");
+        serde_json::from_str(&data).expect("Unable to parse JSON")
+    } else {
+        vec![]
+    }
 }
 
-// メイン関数
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    enable_raw_mode()?; // ターミナルをrawモードに設定
-    let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?; // ターミナルを拡張スクリーンモードに設定し、マウスキャプチャを有効化
-    let backend = CrosstermBackend::new(stdout); // Crosstermのバックエンドを作成
-    let mut terminal = Terminal::new(backend)?; // TUIターミナルを作成
+fn save_todos(todos: &Vec<Todo>) {
+    let data = serde_json::to_string_pretty(todos).expect("Unable to serialize");
+    fs::write(DB_FILE, data).expect("Unable to write file");
+}
 
-    let res = run_app(&mut terminal); // アプリケーションを実行
+#[derive(PartialEq)]
+enum InputMode {
+    Normal,
+    AddingTitle,
+    AddingContent,
+    AddingPriority,
+    AddingDeadline,
+}
 
-    disable_raw_mode()?; // rawモードを無効化
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?; // 拡張スクリーンモードを終了し、マウスキャプチャを無効化
-    terminal.show_cursor()?; // カーソルを表示
+fn main() -> Result<(), io::Error> {
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    stdout.execute(EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
-    if let Err(err) = res {
-        println!("{:?}", err) // エラーが発生した場合は表示
+    let mut todos = load_todos();
+    let mut state = ListState::default();
+    state.select(Some(0));
+
+    let mut input_mode = InputMode::Normal;
+    let mut input_title = String::new();
+    let mut input_content = String::new();
+    let mut input_priority = String::new();
+    let mut input_deadline = String::new();
+
+    loop {
+        terminal.draw(|f| {
+            let size = f.size();
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints(
+                    [
+                        Constraint::Length(3),
+                        Constraint::Min(1),
+                        Constraint::Length(3),
+                    ]
+                    .as_ref(),
+                )
+                .split(size);
+
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title("Todo List");
+            f.render_widget(block, size);
+
+            let items: Vec<ListItem> = todos
+                .iter()
+                .map(|todo| {
+                    let lines = vec![Spans::from(Span::raw(&todo.title))];
+                    ListItem::new(lines).style(Style::default())
+                })
+                .collect();
+            let todos_list = List::new(items)
+                .block(Block::default().borders(Borders::ALL).title("Todos"))
+                .highlight_style(Style::default().bg(Color::Blue));
+            f.render_stateful_widget(todos_list, chunks[1], &mut state);
+
+            let instructions = match input_mode {
+                InputMode::Normal => {
+                    String::from("q: Quit | a: Add | d: Delete | e: Edit | Enter: Toggle Done")
+                }
+                InputMode::AddingTitle => format!("Enter title: {}", input_title),
+                InputMode::AddingContent => format!("Enter content: {}", input_content),
+                InputMode::AddingPriority => format!("Enter priority: {}", input_priority),
+                InputMode::AddingDeadline => format!("Enter deadline: {}", input_deadline),
+            };
+            let instructions = Paragraph::new(instructions)
+                .style(Style::default().fg(Color::White).bg(Color::Black))
+                .block(Block::default().borders(Borders::ALL).title("Instructions"));
+            f.render_widget(instructions, chunks[2]);
+        })?;
+
+        if let Event::Key(key) = event::read()? {
+            match input_mode {
+                InputMode::Normal => {
+                    match key.code {
+                        KeyCode::Char('q') => {
+                            disable_raw_mode()?;
+                            terminal.backend_mut().execute(LeaveAlternateScreen)?;
+                            terminal.show_cursor()?;
+                            break;
+                        }
+                        KeyCode::Char('a') => {
+                            input_mode = InputMode::AddingTitle;
+                        }
+                        KeyCode::Char('d') => {
+                            if let Some(selected) = state.selected() {
+                                if !todos.is_empty() {
+                                    todos.remove(selected);
+                                    if selected > 0 {
+                                        state.select(Some(selected - 1));
+                                    }
+                                    save_todos(&todos);
+                                }
+                            }
+                        }
+                        KeyCode::Char('e') => {
+                            if let Some(selected) = state.selected() {
+                                if !todos.is_empty() {
+                                    input_mode = InputMode::AddingTitle;
+                                    input_title = todos[selected].title.clone();
+                                    input_content = todos[selected].content.clone();
+                                    input_priority = todos[selected].priority.clone();
+                                    input_deadline = todos[selected].deadline.clone();
+                                }
+                            }
+                        }
+                        KeyCode::Enter => {
+                            if let Some(selected) = state.selected() {
+                                if !todos.is_empty() {
+                                    todos[selected].done = !todos[selected].done;
+                                    save_todos(&todos);
+                                }
+                            }
+                        }
+                        KeyCode::Up => {
+                            if let Some(selected) = state.selected() {
+                                if selected > 0 {
+                                    state.select(Some(selected - 1));
+                                }
+                            }
+                        }
+                        KeyCode::Down => {
+                            if let Some(selected) = state.selected() {
+                                if selected < todos.len() - 1 {
+                                    state.select(Some(selected + 1));
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                InputMode::AddingTitle => match key.code {
+                    KeyCode::Enter => {
+                        if !input_title.is_empty() {
+                            input_mode = InputMode::AddingContent;
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        input_title.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        input_title.pop();
+                    }
+                    KeyCode::Esc => {
+                        input_mode = InputMode::Normal;
+                        input_title.clear();
+                    }
+                    _ => {}
+                },
+                InputMode::AddingContent => match key.code {
+                    KeyCode::Enter => {
+                        input_mode = InputMode::AddingPriority;
+                    }
+                    KeyCode::Char(c) => {
+                        input_content.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        input_content.pop();
+                    }
+                    KeyCode::Esc => {
+                        input_mode = InputMode::Normal;
+                        input_title.clear();
+                        input_content.clear();
+                    }
+                    _ => {}
+                },
+                InputMode::AddingPriority => match key.code {
+                    KeyCode::Enter => {
+                        input_mode = InputMode::AddingDeadline;
+                    }
+                    KeyCode::Char(c) => {
+                        input_priority.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        input_priority.pop();
+                    }
+                    KeyCode::Esc => {
+                        input_mode = InputMode::Normal;
+                        input_title.clear();
+                        input_content.clear();
+                        input_priority.clear();
+                    }
+                    _ => {}
+                },
+                InputMode::AddingDeadline => match key.code {
+                    KeyCode::Enter => {
+                        if !input_title.is_empty() {
+                            let new_todo = Todo::new(input_title.clone(), input_content.clone(), input_priority.clone(), input_deadline.clone());
+                            if input_mode == InputMode::AddingDeadline {
+                                todos.push(new_todo);
+                            } else {
+                                if let Some(selected) = state.selected() {
+                                    todos[selected] = new_todo;
+                                }
+                            }
+                            save_todos(&todos);
+                            input_mode = InputMode::Normal;
+                            input_title.clear();
+                            input_content.clear();
+                            input_priority.clear();
+                            input_deadline.clear();
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        input_deadline.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        input_deadline.pop();
+                    }
+                    KeyCode::Esc => {
+                        input_mode = InputMode::Normal;
+                        input_title.clear();
+                        input_content.clear();
+                        input_priority.clear();
+                        input_deadline.clear();
+                    }
+                    _ => {}
+                },
+            }
+        }
     }
 
     Ok(())
-}
-
-// アプリケーションのモードを定義
-enum Mode {
-    Normal, // 通常モード
-    Adding(String), // 追加モード
-    Editing(u32, String), // 編集モード
-    ConfirmDelete(u32), // 削除確認モード
-    Help, // ヘルプモード
-}
-
-// アプリケーションのメインループ
-fn run_app<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
-    let mut mode = Mode::Normal; // 初期モードは通常モード
-    let mut cursor_pos = 0; // カーソル位置の初期値
-    let mut tasks = read_todos().unwrap(); // Todo項目を読み込む
-    loop {
-        terminal.draw(|f| {
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints(
-                    [
-                        Constraint::Percentage(50), // 左右のレイアウトを50%ずつに分割
-                        Constraint::Percentage(50),
-                    ].as_ref()
-                )
-                .split(f.size());
-
-            let block = Block::default()
-                .title("Todo List")
-                .borders(Borders::ALL); // Todoリストのブロックを作成
-            f.render_widget(block, chunks[0]);
-
-            let items: Vec<ListItem> = tasks.iter().map(|todo| {
-                let lines = vec![
-                    Spans::from(Span::styled(todo.task.clone(), Style::default().add_modifier(Modifier::BOLD))),
-                ];
-                ListItem::new(lines).style(Style::default().fg(if todo.done { Color::Green } else { Color::Red }))
-            }).collect();
-
-            let mut state = tui::widgets::ListState::default();
-            state.select(Some(cursor_pos));
-
-            let list = List::new(items)
-                .block(Block::default().borders(Borders::ALL).title("Todos"))
-                .highlight_style(Style::default().bg(Color::LightGreen).fg(Color::Black))
-                .highlight_symbol(">> ");
-            f.render_stateful_widget(list, chunks[0], &mut state);
-
-            match &mode {
-                Mode::Adding(input) => {
-                    let block = Block::default()
-                        .title("Add Task")
-                        .borders(Borders::ALL); // 追加モードのブロックを作成
-                    let paragraph = Paragraph::new(format!("title: {}", input)).block(block);
-                    f.render_widget(paragraph, chunks[1]);
-                }
-                Mode::Editing(_, input) => {
-                    let block = Block::default()
-                        .title("Edit Task")
-                        .borders(Borders::ALL); // 編集モードのブロックを作成
-                    let paragraph = Paragraph::new(format!("title: {}", input)).block(block);
-                    f.render_widget(paragraph, chunks[1]);
-                }
-                Mode::ConfirmDelete(id) => {
-                    let block = Block::default()
-                        .title("Delete Task")
-                        .borders(Borders::ALL); // 削除確認モードのブロックを作成
-                    let paragraph = Paragraph::new(format!("Are you sure you want to delete task with ID {}? (y/n): ", id)).block(block);
-                    f.render_widget(paragraph, chunks[1]);
-                }
-                Mode::Help => {
-                    let block = Block::default()
-                        .title("Help")
-                        .borders(Borders::ALL); // ヘルプモードのブロックを作成
-                    let text = vec![
-                        Spans::from("a - Add a new task"),
-                        Spans::from("e - Edit a task"),
-                        Spans::from("d - Delete a task"),
-                        Spans::from("q - Quit"),
-                        Spans::from("k - Move cursor up"),
-                        Spans::from("j - Move cursor down"),
-                        Spans::from("l - Select task"),
-                        Spans::from("h - Close task"),
-                    ];
-                    let paragraph = Paragraph::new(text).block(block).wrap(tui::widgets::Wrap { trim: true });
-                    f.render_widget(paragraph, chunks[1]);
-                }
-                _ => {}
-            }
-        })?;
-
-        // キーイベントを処理
-        if let event::Event::Key(KeyEvent { code, modifiers }) = event::read()? {
-            match code {
-                KeyCode::Char('q') if matches!(mode, Mode::Normal) => return Ok(()), // 通常モードでqを押すと終了
-                KeyCode::Char('a') if matches!(mode, Mode::Normal) => mode = Mode::Adding(String::new()), // 通常モードでaを押すと追加モードに切り替え
-                KeyCode::Char('e') if matches!(mode, Mode::Normal) => {
-                    if let Some(todo) = tasks.get(cursor_pos) {
-                        mode = Mode::Editing(todo.id, todo.task.clone()); // 通常モードでeを押すと編集モードに切り替え
-                    }
-                }
-                KeyCode::Char('d') if matches!(mode, Mode::Normal) => {
-                    if let Some(todo) = tasks.get(cursor_pos) {
-                        mode = Mode::ConfirmDelete(todo.id); // 通常モードでdを押すと削除確認モードに切り替え
-                    }
-                }
-                KeyCode::Char('?') if matches!(mode, Mode::Normal) => mode = Mode::Help, // 通常モードで?を押すとヘルプモードに切り替え
-                KeyCode::Char('k') if matches!(mode, Mode::Normal) => {
-                    if cursor_pos > 0 {
-                        cursor_pos -= 1; // 通常モードでkを押すとカーソルを上に移動
-                    }
-                }
-                KeyCode::Char('j') if matches!(mode, Mode::Normal) => {
-                    if cursor_pos < tasks.len() - 1 {
-                        cursor_pos += 1; // 通常モードでjを押すとカーソルを下に移動
-                    }
-                }
-                KeyCode::Char('l') if matches!(mode, Mode::ConfirmDelete(_)) => {
-                    if let Mode::ConfirmDelete(id) = mode {
-                        delete_todo_by_id(id); // 削除確認モードでlを押すとタスクを削除
-                        tasks = read_todos().unwrap();
-                        mode = Mode::Normal; // 通常モードに戻る
-                    }
-                }
-                KeyCode::Char('h') if !matches!(mode, Mode::Normal) => {
-                    mode = Mode::Normal; // 他のモードでhを押すと通常モードに戻る
-                }
-                KeyCode::Char('y') if matches!(mode, Mode::ConfirmDelete(_)) => {
-                    if let Mode::ConfirmDelete(id) = mode {
-                        delete_todo_by_id(id); // 削除確認モードでyを押すとタスクを削除
-                        tasks = read_todos().unwrap();
-                        mode = Mode::Normal; // 通常モードに戻る
-                    }
-                }
-                KeyCode::Char('n') if matches!(mode, Mode::ConfirmDelete(_)) => {
-                    if let Mode::ConfirmDelete(_) = mode {
-                        mode = Mode::Normal; // 削除確認モードでnを押すと通常モードに戻る
-                    }
-                }
-                KeyCode::Enter => {
-                    match &mode {
-                        Mode::Adding(input) => {
-                            create_todo(input.clone()); // 追加モードでEnterを押すとタスクを追加
-                            tasks = read_todos().unwrap();
-                            mode = Mode::Normal; // 通常モードに戻る
-                        }
-                        Mode::Editing(id, input) => {
-                            update_todo(*id, Some(input.clone()), None); // 編集モードでEnterを押すとタスクを更新
-                            tasks = read_todos().unwrap();
-                            mode = Mode::Normal; // 通常モードに戻る
-                        }
-                        _ => {}
-                    }
-                }
-                KeyCode::Char(c) if matches!(mode, Mode::Adding(_) | Mode::Editing(_, _)) => {
-                    match &mut mode {
-                        Mode::Adding(input) | Mode::Editing(_, input) => {
-                            input.push(c); // 追加モードまたは編集モードで文字を入力
-                        }
-                        _ => {}
-                    }
-                }
-                KeyCode::Backspace if matches!(mode, Mode::Adding(_) | Mode::Editing(_, _)) => {
-                    match &mut mode {
-                        Mode::Adding(input) | Mode::Editing(_, input) => {
-                            input.pop(); // 追加モードまたは編集モードでBackspaceを押すと文字を削除
-                        }
-                        _ => {}
-                    }
-                }
-                KeyCode::Esc if matches!(mode, Mode::Adding(_) | Mode::Editing(_, _) | Mode::ConfirmDelete(_)) => {
-                    mode = Mode::Normal; // Escキーで通常モードに戻る
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-// タスクIDでTodo項目を削除する関数
-fn delete_todo_by_id(id: u32) {
-    let mut todos = read_todos().expect("Failed to read todos");
-    todos.retain(|todo| todo.id != id); // 指定されたIDのタスクを除去
-    write_todos(&todos).expect("Failed to write todos"); // 更新されたTodoリストをファイルに書き込む
-}
-
-// 新しいTodo項目を作成する関数
-fn create_todo(task: String) {
-    let mut todos = read_todos().expect("Failed to read todos");
-    let id = if let Some(last) = todos.last() { last.id + 1 } else { 1 }; // 新しいIDを生成
-    let todo = TodoItem { id, task, done: false }; // 新しいTodo項目を作成
-    todos.push(todo); // Todoリストに追加
-    write_todos(&todos).expect("Failed to write todos"); // 更新されたTodoリストをファイルに書き込む
-}
-
-// Todo項目を更新する関数
-fn update_todo(id: u32, task: Option<String>, done: Option<bool>) {
-    let mut todos = read_todos().expect("Failed to read todos");
-    if let Some(todo) = todos.iter_mut().find(|todo| todo.id == id) {
-        if let Some(task) = task {
-            todo.task = task; // タスク内容を更新
-        }
-        if let Some(done) = done {
-            todo.done = done; // 完了状態を更新
-        }
-    }
-    write_todos(&todos).expect("Failed to write todos"); // 更新されたTodoリストをファイルに書き込む
 }
