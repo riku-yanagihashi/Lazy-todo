@@ -18,6 +18,7 @@ node_modules/
 # (add any other specific files or directories you want to ignore)
 # 
 
+.DS_Store
 # Stop tracking todo_list.json
 todo_cli/todo_list.json
 todo_cli/todos.json
