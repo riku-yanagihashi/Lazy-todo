@@ -1,0 +1,25 @@
+# Rust build artifacts
+todo_cli/target/
+
+# Backup files
+**/*.rs.bk
+**/*.rs~
+
+# IntelliJ IDEA
+.idea/
+
+# Visual Studio Code
+.vscode/
+
+# Node modules (if any)
+node_modules/
+
+# Other files or directories to ignore
+# (add any other specific files or directories you want to ignore)
+# 
+
+.DS_Store
+# Stop tracking todo_list.json
+todo_cli/todo_list.json
+todo_cli/todos.json
+todo_list.json
