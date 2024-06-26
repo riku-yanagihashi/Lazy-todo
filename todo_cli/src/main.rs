@@ -1,3 +1,4 @@
+use crossterm::cursor::{Hide, Show};
 use crossterm::event::{self, Event, KeyCode};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
@@ -6,7 +7,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 use tui::backend::CrosstermBackend;
-use tui::layout::{Constraint, Direction, Layout};
+use tui::layout::{Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Style};
 use tui::text::{Span, Spans};
 use tui::widgets::{Block, Borders, List, ListItem, Paragraph};
@@ -14,7 +15,7 @@ use tui::Terminal;
 use tui::widgets::ListState;
 use chrono::prelude::*;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Todo {
     title: String,
     content: String,
@@ -61,6 +62,7 @@ enum InputMode {
     AddingPriority,
     AddingDeadline,
     ViewingDetails,
+    Searching,
     EditingTitle(usize),
     EditingContent(usize),
     EditingPriority(usize),
@@ -116,6 +118,7 @@ fn main() -> Result<(), io::Error> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut todos = load_todos();
+    let mut filtered_todos = todos.clone();
     let mut state = ListState::default();
     state.select(Some(0));
 
@@ -124,6 +127,9 @@ fn main() -> Result<(), io::Error> {
     let mut input_content = String::new();
     let mut input_priority = PrioritySelection::Low;
     let mut input_deadline = String::new();
+    let mut search_query = String::new();
+    let mut search_state = ListState::default();
+    search_state.select(Some(0));
 
     loop {
         terminal.draw(|f| {
@@ -153,10 +159,10 @@ fn main() -> Result<(), io::Error> {
 
             let block = Block::default()
                 .borders(Borders::ALL)
-                .title("Lazy Todo");
+                .title("Todo List");
             f.render_widget(block, size);
 
-            let items: Vec<ListItem> = todos
+            let items: Vec<ListItem> = filtered_todos
                 .iter()
                 .map(|todo| {
                     let status = if todo.done {
@@ -192,7 +198,7 @@ fn main() -> Result<(), io::Error> {
 
             if input_mode == InputMode::ViewingDetails {
                 if let Some(selected) = state.selected() {
-                    let todo = &todos[selected];
+                    let todo = &filtered_todos[selected];
                     let status = if todo.done { "✔" } else { "✘" };
                     let priority = &todo.priority;
                     let deadline = if todo.deadline.is_empty() { "No Deadline" } else { &todo.deadline };
@@ -217,7 +223,7 @@ fn main() -> Result<(), io::Error> {
 
             let instructions = match input_mode {
                 InputMode::Normal => {
-                    String::from("q: Quit | a: Add | d: Delete | e: Edit | l: View Details | j: Down | k: Up | Enter: Toggle Done")
+                    String::from("q: Quit | a: Add | d: Delete | e: Edit | l: View Details | <space><space>: Search | j: Down | k: Up | Enter: Toggle Done")
                 }
                 InputMode::AddingTitle | InputMode::EditingTitle(_) => format!("Enter title: {}", input_title),
                 InputMode::AddingContent | InputMode::EditingContent(_) => format!("Enter content: {}", input_content),
@@ -236,83 +242,156 @@ fn main() -> Result<(), io::Error> {
                 },
                 InputMode::AddingDeadline | InputMode::EditingDeadline(_) => format!("Enter deadline: {}", input_deadline),
                 InputMode::ViewingDetails => String::from("Press q to go back"),
+                InputMode::Searching => String::from("Type to search | Enter to filter | Esc to cancel"),
             };
             let instructions_paragraph = Paragraph::new(instructions)
                 .style(Style::default().fg(Color::White).bg(Color::Black))
                 .block(Block::default().borders(Borders::ALL).title("Instructions"));
             f.render_widget(instructions_paragraph, instructions_chunks[0]);
+
+            if input_mode == InputMode::Searching {
+                let search_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(3), Constraint::Length(8)].as_ref())
+                    .split(Rect {
+                    x: size.width / 2 - 60, 
+                    y: size.height / 2 - 20,
+                    width: 120,
+                    height: 25,
+                    });
+
+                let search_input = Paragraph::new(search_query.as_ref())
+                    .style(Style::default().fg(Color::Yellow))
+                    .block(Block::default().borders(Borders::ALL).title("Search"));
+
+                let search_items: Vec<ListItem> = todos
+                    .iter()
+                    .filter(|todo| {
+                        todo.title.contains(&search_query) || todo.content.contains(&search_query)
+                    })
+                    .map(|todo| {
+                        let status = if todo.done {
+                            Span::styled("✔", Style::default().fg(Color::Green))
+                        } else {
+                            Span::styled("✘", Style::default().fg(Color::Red))
+                        };
+                        let priority = match todo.priority.as_str() {
+                            "low" => Span::styled(" ●", Style::default().fg(Color::Green)),
+                            "medium" => Span::styled(" ●", Style::default().fg(Color::Yellow)),
+                            "high" => Span::styled(" ●", Style::default().fg(Color::Red)),
+                            _ => Span::raw(""),
+                        };
+                        let deadline = if todo.deadline.is_empty() {
+                            Span::raw("")
+                        } else {
+                            Span::raw(format!(" | {}", todo.deadline))
+                        };
+                        let content = Spans::from(vec![
+                            status,
+                            Span::raw(": "),
+                            Span::raw(&todo.title),
+                            priority,
+                            deadline,
+                        ]);
+                        ListItem::new(content).style(Style::default())
+                    })
+                    .collect();
+                let search_list = List::new(search_items)
+                    .block(Block::default().borders(Borders::ALL).title("Search Results"))
+                    .highlight_style(Style::default().bg(Color::Blue));
+                f.render_stateful_widget(search_list, search_chunks[1], &mut search_state);
+
+                f.render_widget(search_input, search_chunks[0]);
+            }
         })?;
 
         if let Event::Key(key) = event::read()? {
             match input_mode {
                 InputMode::Normal => {
-                    match key.code {
-                        KeyCode::Char('q') => {
-                            disable_raw_mode()?;
-                            terminal.backend_mut().execute(LeaveAlternateScreen)?;
-                            terminal.show_cursor()?;
-                            break;
+                    static mut SPACE_COUNT: u8 = 0;
+                    if key.code == KeyCode::Char(' ') {
+                        unsafe {
+                            SPACE_COUNT += 1;
+                            if SPACE_COUNT >= 2 {
+                                input_mode = InputMode::Searching;
+                                terminal.backend_mut().execute(Hide)?;
+                                SPACE_COUNT = 0;
+                            }
                         }
-                        KeyCode::Char('a') => {
-                            input_mode = InputMode::AddingTitle;
+                    } else {
+                        unsafe {
+                            SPACE_COUNT = 0;
                         }
-                        KeyCode::Char('d') => {
-                            if let Some(selected) = state.selected() {
-                                if !todos.is_empty() {
-                                    todos.remove(selected);
+                        match key.code {
+                            KeyCode::Char('q') => {
+                                disable_raw_mode()?;
+                                terminal.backend_mut().execute(LeaveAlternateScreen)?;
+                                terminal.show_cursor()?;
+                                break;
+                            }
+                            KeyCode::Char('a') => {
+                                input_mode = InputMode::AddingTitle;
+                            }
+                            KeyCode::Char('d') => {
+                                if let Some(selected) = state.selected() {
+                                    if !filtered_todos.is_empty() {
+                                        filtered_todos.remove(selected);
+                                        todos = filtered_todos.clone();
+                                        if selected > 0 {
+                                            state.select(Some(selected - 1));
+                                        }
+                                        save_todos(&todos);
+                                    }
+                                }
+                            }
+                            KeyCode::Char('e') => {
+                                if let Some(selected) = state.selected() {
+                                    if !filtered_todos.is_empty() {
+                                        input_mode = InputMode::EditingTitle(selected);
+                                        input_title = filtered_todos[selected].title.clone();
+                                        input_content = filtered_todos[selected].content.clone();
+                                        input_priority = match filtered_todos[selected].priority.as_str() {
+                                            "low" => PrioritySelection::Low,
+                                            "medium" => PrioritySelection::Medium,
+                                            "high" => PrioritySelection::High,
+                                            _ => PrioritySelection::Low,
+                                        };
+                                        input_deadline = filtered_todos[selected].deadline.clone();
+                                    }
+                                }
+                            }
+                            KeyCode::Char('l') => {
+                                if let Some(selected) = state.selected() {
+                                    if !filtered_todos.is_empty() {
+                                        input_mode = InputMode::ViewingDetails;
+                                    }
+                                }
+                            }
+                            KeyCode::Char('j') => {
+                                if let Some(selected) = state.selected() {
+                                    if selected < filtered_todos.len() - 1 {
+                                        state.select(Some(selected + 1));
+                                    }
+                                }
+                            }
+                            KeyCode::Char('k') => {
+                                if let Some(selected) = state.selected() {
                                     if selected > 0 {
                                         state.select(Some(selected - 1));
                                     }
-                                    save_todos(&todos);
                                 }
                             }
-                        }
-                        KeyCode::Char('e') => {
-                            if let Some(selected) = state.selected() {
-                                if !todos.is_empty() {
-                                    input_mode = InputMode::EditingTitle(selected);
-                                    input_title = todos[selected].title.clone();
-                                    input_content = todos[selected].content.clone();
-                                    input_priority = match todos[selected].priority.as_str() {
-                                        "low" => PrioritySelection::Low,
-                                        "medium" => PrioritySelection::Medium,
-                                        "high" => PrioritySelection::High,
-                                        _ => PrioritySelection::Low,
-                                    };
-                                    input_deadline = todos[selected].deadline.clone();
+                            KeyCode::Enter => {
+                                if let Some(selected) = state.selected() {
+                                    if !filtered_todos.is_empty() {
+                                        filtered_todos[selected].done = !filtered_todos[selected].done;
+                                        todos = filtered_todos.clone();
+                                        save_todos(&todos);
+                                    }
                                 }
                             }
+                            _ => {}
                         }
-                        KeyCode::Char('l') => {
-                            if let Some(selected) = state.selected() {
-                                if !todos.is_empty() {
-                                    input_mode = InputMode::ViewingDetails;
-                                }
-                            }
-                        }
-                        KeyCode::Char('j') => {
-                            if let Some(selected) = state.selected() {
-                                if selected < todos.len() - 1 {
-                                    state.select(Some(selected + 1));
-                                }
-                            }
-                        }
-                        KeyCode::Char('k') => {
-                            if let Some(selected) = state.selected() {
-                                if selected > 0 {
-                                    state.select(Some(selected - 1));
-                                }
-                            }
-                        }
-                        KeyCode::Enter => {
-                            if let Some(selected) = state.selected() {
-                                if !todos.is_empty() {
-                                    todos[selected].done = !todos[selected].done;
-                                    save_todos(&todos);
-                                }
-                            }
-                        }
-                        _ => {}
                     }
                 }
                 InputMode::AddingTitle => match key.code {
@@ -373,7 +452,8 @@ fn main() -> Result<(), io::Error> {
                         if !input_title.is_empty() {
                             let priority_str = input_priority.to_str().to_string();
                             let new_todo = Todo::new(input_title.clone(), input_content.clone(), priority_str, input_deadline.clone());
-                            todos.push(new_todo);
+                            filtered_todos.push(new_todo);
+                            todos = filtered_todos.clone();
                             save_todos(&todos);
                             input_mode = InputMode::Normal;
                             input_title.clear();
@@ -398,7 +478,7 @@ fn main() -> Result<(), io::Error> {
                 InputMode::EditingTitle(index) => match key.code {
                     KeyCode::Enter => {
                         if !input_title.is_empty() {
-                            todos[index].title = input_title.clone();
+                            filtered_todos[index].title = input_title.clone();
                             input_mode = InputMode::EditingContent(index);
                         }
                     }
@@ -418,7 +498,7 @@ fn main() -> Result<(), io::Error> {
                 },
                 InputMode::EditingContent(index) => match key.code {
                     KeyCode::Enter => {
-                        todos[index].content = input_content.clone();
+                        filtered_todos[index].content = input_content.clone();
                         input_mode = InputMode::EditingPriority(index);
                     }
                     KeyCode::Char(c) => {
@@ -455,9 +535,10 @@ fn main() -> Result<(), io::Error> {
                 },
                 InputMode::EditingDeadline(index) => match key.code {
                     KeyCode::Enter => {
-                        todos[index].priority = input_priority.to_str().to_string();
-                        todos[index].deadline = input_deadline.clone();
-                        todos[index].date_time = Utc::now().to_rfc3339();
+                        filtered_todos[index].priority = input_priority.to_str().to_string();
+                        filtered_todos[index].deadline = input_deadline.clone();
+                        filtered_todos[index].date_time = Utc::now().to_rfc3339();
+                        todos = filtered_todos.clone();
                         save_todos(&todos);
                         input_mode = InputMode::Normal;
                         input_title.clear();
@@ -475,6 +556,48 @@ fn main() -> Result<(), io::Error> {
                         input_title.clear();
                         input_content.clear();
                         input_deadline.clear();
+                    }
+                    _ => {}
+                },
+                InputMode::Searching => match key.code {
+                    KeyCode::Char(c) => {
+                        search_query.push(c);
+                        search_state.select(Some(0));
+                    }
+                    KeyCode::Backspace => {
+                        search_query.pop();
+                        search_state.select(Some(0));
+                    }
+                    KeyCode::Enter => {
+                        filtered_todos = todos
+                            .iter()
+                            .filter(|todo| {
+                                todo.title.contains(&search_query) || todo.content.contains(&search_query)
+                            })
+                            .cloned()
+                            .collect();
+                        input_mode = InputMode::Normal;
+                        state.select(Some(0));
+                        terminal.backend_mut().execute(Show)?;
+                    }
+                    KeyCode::Esc => {
+                        input_mode = InputMode::Normal;
+                        search_query.clear();
+                        terminal.backend_mut().execute(Show)?;
+                    }
+                    KeyCode::Char('j') => {
+                        if let Some(selected) = search_state.selected() {
+                            if selected < todos.len() - 1 {
+                                search_state.select(Some(selected + 1));
+                            }
+                        }
+                    }
+                    KeyCode::Char('k') => {
+                        if let Some(selected) = search_state.selected() {
+                            if selected > 0 {
+                                search_state.select(Some(selected - 1));
+                            }
+                        }
                     }
                     _ => {}
                 },
