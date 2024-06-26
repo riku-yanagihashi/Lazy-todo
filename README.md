@@ -3,9 +3,10 @@
 ## インストール方法
 
 ### MacOSの場合
-RUSTの実行環境が整っている状態で以下のコマンドをターミナルで入力してください
+多分homebrewが入ってたらこのコマンド打てばいける
 ```sh
-git clone --depth 1  https://github.com/riku-yanagihashi/Lazy-todo.git ~/Lazy-todo && cd Lazy-todo/todo_cli && cargo build && cargo install --path . && cd 
+brew tap riku-yanagihashi/ltd
+brew install ltd
 ```
 
 ※ Windowsはサポートする予定ありません
@@ -42,7 +43,7 @@ Esc:ノーマルモードに戻る <br>
 
 ## アンインストール方法
 ```sh
-cargo uninstall ltd
+brew uninstall ltd
 ```
 
 
