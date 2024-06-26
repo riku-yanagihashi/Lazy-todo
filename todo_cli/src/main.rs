@@ -245,15 +245,35 @@ fn main() -> Result<(), io::Error> {
             if input_mode == InputMode::ViewingDetails {
                 if let Some(selected) = state.selected() {
                     let todo = &filtered_todos[selected];
-                    let status = if todo.done { "✔" } else { "✘" };
-                    let priority = &todo.priority;
+                    let status = if todo.done { "✔ Completed" } else { "✘ Not Completed" };
+                    let priority = match todo.priority.as_str() {
+                        "low" => Span::styled("Low", Style::default().fg(Color::Green)),
+                        "medium" => Span::styled("Medium", Style::default().fg(Color::Yellow)),
+                        "high" => Span::styled("High", Style::default().fg(Color::Red)),
+                        _ => Span::raw("Unknown"),
+                    };
                     let deadline = if todo.deadline.is_empty() { "No Deadline" } else { &todo.deadline };
                     let details = vec![
-                        Spans::from(vec![Span::styled("Title: ", Style::default().fg(Color::White)), Span::raw(&todo.title)]),
-                        Spans::from(vec![Span::styled("Content: ", Style::default().fg(Color::White)), Span::raw(&todo.content)]),
-                        Spans::from(vec![Span::styled("Priority: ", Style::default().fg(Color::White)), Span::raw(priority)]),
-                        Spans::from(vec![Span::styled("Deadline: ", Style::default().fg(Color::White)), Span::raw(deadline)]),
-                        Spans::from(vec![Span::styled("Status: ", Style::default().fg(Color::White)), Span::raw(status)]),
+                        Spans::from(vec![
+                            Span::styled("Title: ", Style::default().fg(Color::Cyan)),
+                            Span::raw(&todo.title),
+                        ]),
+                        Spans::from(vec![
+                            Span::styled("Content: ", Style::default().fg(Color::Cyan)),
+                            Span::raw(&todo.content),
+                        ]),
+                        Spans::from(vec![
+                            Span::styled("Priority: ", Style::default().fg(Color::Cyan)),
+                            priority,
+                        ]),
+                        Spans::from(vec![
+                            Span::styled("Deadline: ", Style::default().fg(Color::Cyan)),
+                            Span::raw(deadline),
+                        ]),
+                        Spans::from(vec![
+                            Span::styled("Status: ", Style::default().fg(Color::Cyan)),
+                            Span::raw(status),
+                        ]),
                     ];
                     let details_block = Paragraph::new(details)
                         .block(Block::default().borders(Borders::ALL).title("Details"))
