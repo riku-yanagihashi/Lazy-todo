@@ -14,6 +14,7 @@ use tui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use tui::Terminal;
 use tui::widgets::ListState;
 use chrono::prelude::*;
+use std::cmp::Ordering;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 struct Todo {
@@ -110,6 +111,43 @@ impl PrioritySelection {
     }
 }
 
+#[derive(Clone)]
+enum SortMode {
+    ByCompletion,
+    ByDeadline,
+    ByPriority,
+}
+
+fn sort_todos(todos: &mut Vec<Todo>, mode: SortMode) {
+    match mode {
+        SortMode::ByCompletion => {
+            todos.sort_by(|a, b| a.done.cmp(&b.done));
+        }
+        SortMode::ByDeadline => {
+            todos.sort_by(|a, b| {
+                if a.deadline.is_empty() {
+                    Ordering::Greater
+                } else if b.deadline.is_empty() {
+                    Ordering::Less
+                } else {
+                    a.deadline.cmp(&b.deadline)
+                }
+            });
+        }
+        SortMode::ByPriority => {
+            todos.sort_by(|a, b| {
+                let priority_order = |p: &str| match p {
+                    "high" => 0,
+                    "medium" => 1,
+                    "low" => 2,
+                    _ => 3,
+                };
+                priority_order(&a.priority).cmp(&priority_order(&b.priority))
+            });
+        }
+    }
+}
+
 fn main() -> Result<(), io::Error> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -130,6 +168,7 @@ fn main() -> Result<(), io::Error> {
     let mut search_query = String::new();
     let mut search_state = ListState::default();
     search_state.select(Some(0));
+    let mut sort_mode = SortMode::ByCompletion;
 
     loop {
         terminal.draw(|f| {
@@ -151,15 +190,22 @@ fn main() -> Result<(), io::Error> {
                     [
                         Constraint::Length(3),
                         Constraint::Min(1),
-                        Constraint::Length(6), // 調整された部分
+                        Constraint::Length(6),
                     ]
                     .as_ref(),
                 )
                 .split(left_chunk);
 
+            // 現在のソートモードを取得
+            let sort_mode_str = match sort_mode {
+                SortMode::ByCompletion => "Completion",
+                SortMode::ByDeadline => "Deadline",
+                SortMode::ByPriority => "Priority",
+            };
+
             let block = Block::default()
                 .borders(Borders::ALL)
-                .title("Todo List");
+                .title(format!("Lazy Todo - Sort Mode: {}", sort_mode_str)); // タイトルにソートモードを追加
             f.render_widget(block, size);
 
             let items: Vec<ListItem> = filtered_todos
@@ -223,7 +269,7 @@ fn main() -> Result<(), io::Error> {
 
             let instructions = match input_mode {
                 InputMode::Normal => {
-                    String::from("q: Quit | a: Add | d: Delete | e: Edit | l: View Details | <space><space>: Search | j: Down | k: Up | Enter: Toggle Done")
+                    String::from("q: Quit | a: Add | d: Delete | e: Edit | l: View Details | <space><space>: Search | s: Sort | j: Down | k: Up | Enter: Toggle Done")
                 }
                 InputMode::AddingTitle | InputMode::EditingTitle(_) => format!("Enter title: {}", input_title),
                 InputMode::AddingContent | InputMode::EditingContent(_) => format!("Enter content: {}", input_content),
@@ -254,10 +300,10 @@ fn main() -> Result<(), io::Error> {
                     .direction(Direction::Vertical)
                     .constraints([Constraint::Length(3), Constraint::Length(8)].as_ref())
                     .split(Rect {
-                    x: size.width / 2 - 60, 
-                    y: size.height / 2 - 20,
-                    width: 120,
-                    height: 25,
+                        x: size.width / 2 - 60, 
+                        y: size.height / 2 - 20,
+                        width: 120,
+                        height: 25,
                     });
 
                 let search_input = Paragraph::new(search_query.as_ref())
@@ -314,7 +360,7 @@ fn main() -> Result<(), io::Error> {
                             SPACE_COUNT += 1;
                             if SPACE_COUNT >= 2 {
                                 input_mode = InputMode::Searching;
-                                terminal.backend_mut().execute(Hide)?;
+                                terminal.backend_mut().execute(Hide)?; // ここを追加
                                 SPACE_COUNT = 0;
                             }
                         }
@@ -333,35 +379,35 @@ fn main() -> Result<(), io::Error> {
                                 input_mode = InputMode::AddingTitle;
                             }
                             KeyCode::Char('d') => {
-                                if let Some(selected) = state.selected() {
+                                if let Some(_selected) = state.selected() {
                                     if !filtered_todos.is_empty() {
-                                        filtered_todos.remove(selected);
+                                        filtered_todos.remove(_selected);
                                         todos = filtered_todos.clone();
-                                        if selected > 0 {
-                                            state.select(Some(selected - 1));
+                                        if _selected > 0 {
+                                            state.select(Some(_selected - 1));
                                         }
                                         save_todos(&todos);
                                     }
                                 }
                             }
                             KeyCode::Char('e') => {
-                                if let Some(selected) = state.selected() {
+                                if let Some(_selected) = state.selected() {
                                     if !filtered_todos.is_empty() {
-                                        input_mode = InputMode::EditingTitle(selected);
-                                        input_title = filtered_todos[selected].title.clone();
-                                        input_content = filtered_todos[selected].content.clone();
-                                        input_priority = match filtered_todos[selected].priority.as_str() {
+                                        input_mode = InputMode::EditingTitle(_selected);
+                                        input_title = filtered_todos[_selected].title.clone();
+                                        input_content = filtered_todos[_selected].content.clone();
+                                        input_priority = match filtered_todos[_selected].priority.as_str() {
                                             "low" => PrioritySelection::Low,
                                             "medium" => PrioritySelection::Medium,
                                             "high" => PrioritySelection::High,
                                             _ => PrioritySelection::Low,
                                         };
-                                        input_deadline = filtered_todos[selected].deadline.clone();
+                                        input_deadline = filtered_todos[_selected].deadline.clone();
                                     }
                                 }
                             }
                             KeyCode::Char('l') => {
-                                if let Some(selected) = state.selected() {
+                                if let Some(_selected) = state.selected() {
                                     if !filtered_todos.is_empty() {
                                         input_mode = InputMode::ViewingDetails;
                                     }
@@ -380,6 +426,14 @@ fn main() -> Result<(), io::Error> {
                                         state.select(Some(selected - 1));
                                     }
                                 }
+                            }
+                            KeyCode::Char('s') => {
+                                match sort_mode {
+                                    SortMode::ByCompletion => sort_mode = SortMode::ByDeadline,
+                                    SortMode::ByDeadline => sort_mode = SortMode::ByPriority,
+                                    SortMode::ByPriority => sort_mode = SortMode::ByCompletion,
+                                }
+                                sort_todos(&mut filtered_todos, sort_mode.clone());
                             }
                             KeyCode::Enter => {
                                 if let Some(selected) = state.selected() {
@@ -578,12 +632,12 @@ fn main() -> Result<(), io::Error> {
                             .collect();
                         input_mode = InputMode::Normal;
                         state.select(Some(0));
-                        terminal.backend_mut().execute(Show)?;
+                        terminal.backend_mut().execute(Show)?; // ここを追加
                     }
                     KeyCode::Esc => {
                         input_mode = InputMode::Normal;
                         search_query.clear();
-                        terminal.backend_mut().execute(Show)?;
+                        terminal.backend_mut().execute(Show)?; // ここを追加
                     }
                     KeyCode::Char('j') => {
                         if let Some(selected) = search_state.selected() {
