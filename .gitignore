@@ -20,6 +20,9 @@ node_modules/
 
 .DS_Store
 # Stop tracking todo_list.json
+
+# DBs
 todo_cli/todo_list.json
 todo_cli/todos.json
 todo_list.json
+todos.json

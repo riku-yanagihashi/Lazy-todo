@@ -11,10 +11,9 @@ mod ui;
 use crate::handle_input::handle_input;
 use crate::input::{InputMode, PrioritySelection};
 use crate::sort::SortMode;
-use crate::todo::{load_todos, save_todos, Todo};
+use crate::todo::load_todos;
 use crate::ui::draw_ui;
 
-use crossterm::cursor::Hide;
 use crossterm::event::{self, Event};
 use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen};
 use crossterm::ExecutableCommand;
@@ -44,6 +43,7 @@ fn main() -> Result<(), io::Error> {
     let mut search_state = ListState::default();
     search_state.select(Some(0));
     let mut sort_mode = SortMode::ByCompletion;
+    let mut subtask_state = ListState::default();
 
     loop {
         terminal.draw(|f| {
@@ -59,6 +59,7 @@ fn main() -> Result<(), io::Error> {
                 &input_deadline,
                 &search_query,
                 &sort_mode,
+                &mut subtask_state,
             );
         })?;
 
@@ -77,6 +78,7 @@ fn main() -> Result<(), io::Error> {
                 &mut search_state,
                 &mut sort_mode,
                 &mut terminal,
+                &mut subtask_state,
             )?;
         }
     }

@@ -9,9 +9,14 @@ use crossterm::event::KeyCode;
 use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
 use std::io;
+use std::time::{Duration, Instant};
 use tui::backend::CrosstermBackend;
 use tui::Terminal;
 use tui::widgets::ListState;
+use std::collections::VecDeque;
+
+static mut LAST_SPACE_PRESS: Option<Instant> = None;
+static mut DELETED_TODOS: VecDeque<Todo> = VecDeque::new();
 
 pub fn handle_input(
     key: crossterm::event::KeyEvent,
@@ -27,22 +32,28 @@ pub fn handle_input(
     search_state: &mut ListState,
     sort_mode: &mut SortMode,
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    subtask_state: &mut ListState,
 ) -> Result<(), io::Error> {
     match input_mode {
         InputMode::Normal => {
-            static mut SPACE_COUNT: u8 = 0;
             if key.code == KeyCode::Char(' ') {
+                let now = Instant::now();
                 unsafe {
-                    SPACE_COUNT += 1;
-                    if SPACE_COUNT >= 2 {
-                        *input_mode = InputMode::Searching;
-                        terminal.backend_mut().execute(Hide)?;
-                        SPACE_COUNT = 0;
+                    if let Some(last_press) = LAST_SPACE_PRESS {
+                        if now.duration_since(last_press) < Duration::from_millis(500) {
+                            *input_mode = InputMode::Searching;
+                            terminal.backend_mut().execute(Hide)?;
+                            LAST_SPACE_PRESS = None;
+                        } else {
+                            LAST_SPACE_PRESS = Some(now);
+                        }
+                    } else {
+                        LAST_SPACE_PRESS = Some(now);
                     }
                 }
             } else {
                 unsafe {
-                    SPACE_COUNT = 0;
+                    LAST_SPACE_PRESS = None;
                 }
                 match key.code {
                     KeyCode::Char('q') => {
@@ -55,8 +66,19 @@ pub fn handle_input(
                         *input_mode = InputMode::AddingTitle;
                     }
                     KeyCode::Char('d') => {
-                        delete_task(filtered_todos, todos, state);
+                        unsafe {
+                            delete_task(filtered_todos, todos, state, &mut DELETED_TODOS);
+                        }
                         save_todos(todos);
+                    }
+                    KeyCode::Char('u') => {
+                        unsafe {
+                            if let Some(todo) = DELETED_TODOS.pop_back() {
+                                filtered_todos.push(todo.clone());
+                                *todos = filtered_todos.clone();
+                                save_todos(todos);
+                            }
+                        }
                     }
                     KeyCode::Char('e') => {
                         if let Some(selected) = state.selected() {
@@ -77,7 +99,22 @@ pub fn handle_input(
                     KeyCode::Char('l') => {
                         if let Some(selected) = state.selected() {
                             if !filtered_todos.is_empty() {
-                                *input_mode = InputMode::ViewingDetails;
+                                filtered_todos[selected].expanded = true;
+                            }
+                        }
+                    }
+                    KeyCode::Char('h') => {
+                        if let Some(selected) = state.selected() {
+                            if !filtered_todos.is_empty() {
+                                filtered_todos[selected].expanded = false;
+                            }
+                        }
+                    }
+                    KeyCode::Char('o') => {
+                        if let Some(selected) = state.selected() {
+                            if !filtered_todos.is_empty() {
+                                *input_mode = InputMode::ViewingDetails(selected);
+                                subtask_state.select(Some(0));
                             }
                         }
                     }
@@ -317,11 +354,63 @@ pub fn handle_input(
             }
             _ => {}
         },
-        InputMode::ViewingDetails => {
+        InputMode::ViewingDetails(index) => {
             if key.code == KeyCode::Char('q') {
                 *input_mode = InputMode::Normal;
+            } else if key.code == KeyCode::Char(' ') {
+                *input_mode = InputMode::AddingSubtask(*index);
+            } else if key.code == KeyCode::Char('j') {
+                if let Some(selected) = subtask_state.selected() {
+                    let new_index = selected.saturating_add(1);
+                    if new_index < filtered_todos[*index].subtasks.len() {
+                        subtask_state.select(Some(new_index));
+                    }
+                } else {
+                    subtask_state.select(Some(0));
+                }
+            } else if key.code == KeyCode::Char('k') {
+                if let Some(selected) = subtask_state.selected() {
+                    let new_index = selected.saturating_sub(1);
+                    subtask_state.select(Some(new_index));
+                }
+            } else if key.code == KeyCode::Enter {
+                if let Some(selected) = subtask_state.selected() {
+                    let subtask = &mut filtered_todos[*index].subtasks[selected];
+                    subtask.done = !subtask.done;
+                    save_todos(filtered_todos);
+                }
             }
         }
+        InputMode::ViewingSubtaskDetails(task_index, subtask_index) => {
+            if key.code == KeyCode::Char('q') {
+                *input_mode = InputMode::ViewingDetails(*task_index);
+            } else if key.code == KeyCode::Enter {
+                let subtask = &mut filtered_todos[*task_index].subtasks[*subtask_index];
+                subtask.done = !subtask.done;
+                save_todos(filtered_todos);
+            }
+        }
+        InputMode::AddingSubtask(index) => match key.code {
+            KeyCode::Enter => {
+                if !input_title.is_empty() {
+                    filtered_todos[*index].add_subtask(input_title.clone());
+                    save_todos(filtered_todos);
+                    *input_mode = InputMode::ViewingDetails(*index);
+                    input_title.clear();
+                }
+            }
+            KeyCode::Char(c) => {
+                input_title.push(c);
+            }
+            KeyCode::Backspace => {
+                input_title.pop();
+            }
+            KeyCode::Esc => {
+                *input_mode = InputMode::ViewingDetails(*index);
+                input_title.clear();
+            }
+            _ => {}
+        },
     }
     Ok(())
 }
