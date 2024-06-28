@@ -219,4 +219,3 @@ pub fn draw_ui<B: Backend>(
         f.render_widget(search_input, search_chunks[0]);
     }
 }
-

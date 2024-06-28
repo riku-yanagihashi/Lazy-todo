@@ -14,7 +14,6 @@ use crate::sort::SortMode;
 use crate::todo::{load_todos, save_todos, Todo};
 use crate::ui::draw_ui;
 
-use crossterm::cursor::Hide;
 use crossterm::event::{self, Event};
 use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen};
 use crossterm::ExecutableCommand;

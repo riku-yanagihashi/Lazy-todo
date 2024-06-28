@@ -9,9 +9,12 @@ use crossterm::event::KeyCode;
 use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
 use std::io;
+use std::time::{Duration, Instant};
 use tui::backend::CrosstermBackend;
 use tui::Terminal;
 use tui::widgets::ListState;
+
+static mut LAST_SPACE_PRESS: Option<Instant> = None;
 
 pub fn handle_input(
     key: crossterm::event::KeyEvent,
@@ -30,19 +33,24 @@ pub fn handle_input(
 ) -> Result<(), io::Error> {
     match input_mode {
         InputMode::Normal => {
-            static mut SPACE_COUNT: u8 = 0;
             if key.code == KeyCode::Char(' ') {
+                let now = Instant::now();
                 unsafe {
-                    SPACE_COUNT += 1;
-                    if SPACE_COUNT >= 2 {
-                        *input_mode = InputMode::Searching;
-                        terminal.backend_mut().execute(Hide)?;
-                        SPACE_COUNT = 0;
+                    if let Some(last_press) = LAST_SPACE_PRESS {
+                        if now.duration_since(last_press) < Duration::from_millis(500) {
+                            *input_mode = InputMode::Searching;
+                            terminal.backend_mut().execute(Hide)?;
+                            LAST_SPACE_PRESS = None;
+                        } else {
+                            LAST_SPACE_PRESS = Some(now);
+                        }
+                    } else {
+                        LAST_SPACE_PRESS = Some(now);
                     }
                 }
             } else {
                 unsafe {
-                    SPACE_COUNT = 0;
+                    LAST_SPACE_PRESS = None;
                 }
                 match key.code {
                     KeyCode::Char('q') => {
