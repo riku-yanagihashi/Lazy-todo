@@ -13,8 +13,10 @@ use std::time::{Duration, Instant};
 use tui::backend::CrosstermBackend;
 use tui::Terminal;
 use tui::widgets::ListState;
+use std::collections::VecDeque;
 
 static mut LAST_SPACE_PRESS: Option<Instant> = None;
+static mut DELETED_TODOS: VecDeque<Todo> = VecDeque::new();
 
 pub fn handle_input(
     key: crossterm::event::KeyEvent,
@@ -63,8 +65,19 @@ pub fn handle_input(
                         *input_mode = InputMode::AddingTitle;
                     }
                     KeyCode::Char('d') => {
-                        delete_task(filtered_todos, todos, state);
+                        unsafe {
+                            delete_task(filtered_todos, todos, state, &mut DELETED_TODOS);
+                        }
                         save_todos(todos);
+                    }
+                    KeyCode::Char('u') => {
+                        unsafe {
+                            if let Some(todo) = DELETED_TODOS.pop_back() {
+                                filtered_todos.push(todo.clone());
+                                *todos = filtered_todos.clone();
+                                save_todos(todos);
+                            }
+                        }
                     }
                     KeyCode::Char('e') => {
                         if let Some(selected) = state.selected() {
