@@ -5,12 +5,14 @@ pub enum InputMode {
     AddingContent,
     AddingPriority,
     AddingDeadline,
-    ViewingDetails,
+    ViewingDetails(usize),
+    ViewingSubtaskDetails(usize, usize), // サブタスク詳細表示のモードを追加
     Searching,
     EditingTitle(usize),
     EditingContent(usize),
     EditingPriority(usize),
     EditingDeadline(usize),
+    AddingSubtask(usize),
 }
 
 #[derive(PartialEq, Copy, Clone)]
@@ -53,4 +55,3 @@ impl PrioritySelection {
         }
     }
 }
-

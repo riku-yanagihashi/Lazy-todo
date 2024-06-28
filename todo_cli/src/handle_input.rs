@@ -32,6 +32,7 @@ pub fn handle_input(
     search_state: &mut ListState,
     sort_mode: &mut SortMode,
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    subtask_state: &mut ListState,
 ) -> Result<(), io::Error> {
     match input_mode {
         InputMode::Normal => {
@@ -98,7 +99,22 @@ pub fn handle_input(
                     KeyCode::Char('l') => {
                         if let Some(selected) = state.selected() {
                             if !filtered_todos.is_empty() {
-                                *input_mode = InputMode::ViewingDetails;
+                                filtered_todos[selected].expanded = true;
+                            }
+                        }
+                    }
+                    KeyCode::Char('h') => {
+                        if let Some(selected) = state.selected() {
+                            if !filtered_todos.is_empty() {
+                                filtered_todos[selected].expanded = false;
+                            }
+                        }
+                    }
+                    KeyCode::Char('o') => {
+                        if let Some(selected) = state.selected() {
+                            if !filtered_todos.is_empty() {
+                                *input_mode = InputMode::ViewingDetails(selected);
+                                subtask_state.select(Some(0));
                             }
                         }
                     }
@@ -338,11 +354,63 @@ pub fn handle_input(
             }
             _ => {}
         },
-        InputMode::ViewingDetails => {
+        InputMode::ViewingDetails(index) => {
             if key.code == KeyCode::Char('q') {
                 *input_mode = InputMode::Normal;
+            } else if key.code == KeyCode::Char(' ') {
+                *input_mode = InputMode::AddingSubtask(*index);
+            } else if key.code == KeyCode::Char('j') {
+                if let Some(selected) = subtask_state.selected() {
+                    let new_index = selected.saturating_add(1);
+                    if new_index < filtered_todos[*index].subtasks.len() {
+                        subtask_state.select(Some(new_index));
+                    }
+                } else {
+                    subtask_state.select(Some(0));
+                }
+            } else if key.code == KeyCode::Char('k') {
+                if let Some(selected) = subtask_state.selected() {
+                    let new_index = selected.saturating_sub(1);
+                    subtask_state.select(Some(new_index));
+                }
+            } else if key.code == KeyCode::Enter {
+                if let Some(selected) = subtask_state.selected() {
+                    let subtask = &mut filtered_todos[*index].subtasks[selected];
+                    subtask.done = !subtask.done;
+                    save_todos(filtered_todos);
+                }
             }
         }
+        InputMode::ViewingSubtaskDetails(task_index, subtask_index) => {
+            if key.code == KeyCode::Char('q') {
+                *input_mode = InputMode::ViewingDetails(*task_index);
+            } else if key.code == KeyCode::Enter {
+                let subtask = &mut filtered_todos[*task_index].subtasks[*subtask_index];
+                subtask.done = !subtask.done;
+                save_todos(filtered_todos);
+            }
+        }
+        InputMode::AddingSubtask(index) => match key.code {
+            KeyCode::Enter => {
+                if !input_title.is_empty() {
+                    filtered_todos[*index].add_subtask(input_title.clone());
+                    save_todos(filtered_todos);
+                    *input_mode = InputMode::ViewingDetails(*index);
+                    input_title.clear();
+                }
+            }
+            KeyCode::Char(c) => {
+                input_title.push(c);
+            }
+            KeyCode::Backspace => {
+                input_title.pop();
+            }
+            KeyCode::Esc => {
+                *input_mode = InputMode::ViewingDetails(*index);
+                input_title.clear();
+            }
+            _ => {}
+        },
     }
     Ok(())
 }
