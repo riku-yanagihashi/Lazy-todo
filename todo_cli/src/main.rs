@@ -1,6 +1,5 @@
 mod add_task;
 mod delete_task;
-mod edit_task;
 mod handle_input;
 mod input;
 mod search;
