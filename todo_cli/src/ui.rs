@@ -67,7 +67,7 @@ pub fn draw_ui<B: Backend>(
     let items: Vec<ListItem> = filtered_todos
         .iter()
         .enumerate()
-        .flat_map(|(_i, todo)| {
+        .flat_map(|(i, todo)| {
             let mut list_items = vec![];
             let status = if todo.done {
                 Span::styled("✔", Style::default().fg(Color::Green))
@@ -97,7 +97,7 @@ pub fn draw_ui<B: Backend>(
             list_items.push(ListItem::new(content).style(Style::default()));
 
             if todo.expanded {
-                for subtask in &todo.subtasks {
+                for (j, subtask) in todo.subtasks.iter().enumerate() {
                     let subtask_status = if subtask.done { "✔" } else { "✘" };
                     let subtask_content = Spans::from(vec![
                         Span::raw("  ├ "),

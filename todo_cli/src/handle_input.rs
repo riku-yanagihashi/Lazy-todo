@@ -82,55 +82,76 @@ pub fn handle_input(
                     }
                     KeyCode::Char('e') => {
                         if let Some(selected) = state.selected() {
-                            if !filtered_todos.is_empty() {
-                                *input_mode = InputMode::EditingTitle(selected);
-                                *input_title = filtered_todos[selected].title.clone();
-                                *input_content = filtered_todos[selected].content.clone();
-                                *input_priority = match filtered_todos[selected].priority.as_str() {
-                                    "low" => PrioritySelection::Low,
-                                    "medium" => PrioritySelection::Medium,
-                                    "high" => PrioritySelection::High,
-                                    _ => PrioritySelection::Low,
-                                };
-                                *input_deadline = filtered_todos[selected].deadline.clone();
+                            let (main_index, sub_index) = get_main_and_sub_index(filtered_todos, selected);
+                            if let Some(main_index) = main_index {
+                                if let Some(sub_index) = sub_index {
+                                    let subtask = &filtered_todos[main_index].subtasks[sub_index];
+                                    *input_mode = InputMode::EditingTitle(selected);
+                                    *input_title = subtask.title.clone();
+                                    *input_content = subtask.content.clone();
+                                    *input_priority = match subtask.priority.as_str() {
+                                        "low" => PrioritySelection::Low,
+                                        "medium" => PrioritySelection::Medium,
+                                        "high" => PrioritySelection::High,
+                                        _ => PrioritySelection::Low,
+                                    };
+                                    *input_deadline = subtask.deadline.clone();
+                                } else {
+                                    let todo = &filtered_todos[main_index];
+                                    *input_mode = InputMode::EditingTitle(selected);
+                                    *input_title = todo.title.clone();
+                                    *input_content = todo.content.clone();
+                                    *input_priority = match todo.priority.as_str() {
+                                        "low" => PrioritySelection::Low,
+                                        "medium" => PrioritySelection::Medium,
+                                        "high" => PrioritySelection::High,
+                                        _ => PrioritySelection::Low,
+                                    };
+                                    *input_deadline = todo.deadline.clone();
+                                }
                             }
                         }
                     }
                     KeyCode::Char('l') => {
                         if let Some(selected) = state.selected() {
-                            if !filtered_todos.is_empty() {
-                                filtered_todos[selected].expanded = true;
+                            let (main_index, sub_index) = get_main_and_sub_index(filtered_todos, selected);
+                            if let Some(main_index) = main_index {
+                                if sub_index.is_none() {
+                                    filtered_todos[main_index].expanded = true;
+                                }
                             }
                         }
                     }
                     KeyCode::Char('h') => {
                         if let Some(selected) = state.selected() {
-                            if !filtered_todos.is_empty() {
-                                filtered_todos[selected].expanded = false;
+                            let (main_index, sub_index) = get_main_and_sub_index(filtered_todos, selected);
+                            if let Some(main_index) = main_index {
+                                if sub_index.is_none() {
+                                    filtered_todos[main_index].expanded = false;
+                                }
                             }
                         }
                     }
                     KeyCode::Char('o') => {
                         if let Some(selected) = state.selected() {
-                            if !filtered_todos.is_empty() {
-                                *input_mode = InputMode::ViewingDetails(selected);
-                                subtask_state.select(Some(0));
+                            let (main_index, sub_index) = get_main_and_sub_index(filtered_todos, selected);
+                            if let Some(main_index) = main_index {
+                                if sub_index.is_none() {
+                                    *input_mode = InputMode::ViewingDetails(main_index);
+                                    subtask_state.select(Some(0));
+                                }
                             }
                         }
                     }
                     KeyCode::Char('j') => {
-                        if let Some(selected) = state.selected() {
-                            if selected < filtered_todos.len() - 1 {
-                                state.select(Some(selected + 1));
-                            }
-                        }
+                        let mut index = state.selected().unwrap_or(0);
+                        index = move_cursor_down(filtered_todos, index);
+                        state.select(Some(index));
                     }
                     KeyCode::Char('k') => {
-                        if let Some(selected) = state.selected() {
-                            if selected > 0 {
-                                state.select(Some(selected - 1));
-                            }
-                        }
+                        let mut index = state.selected().unwrap_or(0);
+                        index = move_cursor_up(filtered_todos, index);
+                        state.select(Some(index));
                     }
                     KeyCode::Char('s') => {
                         cycle_sort_mode(sort_mode);
@@ -138,9 +159,13 @@ pub fn handle_input(
                     }
                     KeyCode::Enter => {
                         if let Some(selected) = state.selected() {
-                            if !filtered_todos.is_empty() {
-                                filtered_todos[selected].done = !filtered_todos[selected].done;
-                                *todos = filtered_todos.clone();
+                            let (main_index, sub_index) = get_main_and_sub_index(filtered_todos, selected);
+                            if let Some(main_index) = main_index {
+                                if let Some(sub_index) = sub_index {
+                                    filtered_todos[main_index].subtasks[sub_index].done = !filtered_todos[main_index].subtasks[sub_index].done;
+                                } else {
+                                    filtered_todos[main_index].done = !filtered_todos[main_index].done;
+                                }
                                 save_todos(todos);
                             }
                         }
@@ -413,4 +438,101 @@ pub fn handle_input(
         },
     }
     Ok(())
+}
+
+fn move_cursor_down(todos: &Vec<Todo>, index: usize) -> usize {
+    let mut current_index = 0;
+    let mut target_index = index;
+    for (main_index, todo) in todos.iter().enumerate() {
+        if current_index == index {
+            target_index = current_index + 1;
+            break;
+        }
+        current_index += 1;
+        if todo.expanded {
+            for (sub_index, _subtask) in todo.subtasks.iter().enumerate() {
+                if current_index == index {
+                    target_index = current_index + 1;
+                    break;
+                }
+                current_index += 1;
+            }
+        }
+    }
+    target_index.min(total_items(todos) - 1)
+}
+
+fn move_cursor_up(todos: &Vec<Todo>, index: usize) -> usize {
+    let mut current_index = 0;
+    let mut target_index = index;
+    for (main_index, todo) in todos.iter().enumerate() {
+        if current_index == index {
+            if current_index > 0 {
+                target_index = current_index - 1;
+            }
+            break;
+        }
+        current_index += 1;
+        if todo.expanded {
+            for (sub_index, _subtask) in todo.subtasks.iter().enumerate() {
+                if current_index == index {
+                    if current_index > 0 {
+                        target_index = current_index - 1;
+                    }
+                    break;
+                }
+                current_index += 1;
+            }
+        }
+    }
+    target_index
+}
+
+fn toggle_done(todos: &mut Vec<Todo>, index: usize) {
+    let mut current_index = 0;
+    for todo in todos {
+        if current_index == index {
+            todo.done = !todo.done;
+            break;
+        }
+        current_index += 1;
+        if todo.expanded {
+            for subtask in &mut todo.subtasks {
+                if current_index == index {
+                    subtask.done = !subtask.done;
+                    break;
+                }
+                current_index += 1;
+            }
+        }
+    }
+}
+
+fn total_items(todos: &Vec<Todo>) -> usize {
+    todos.iter().map(|todo| {
+        if todo.expanded {
+            1 + todo.subtasks.len()
+        } else {
+            1
+        }
+    }).sum()
+}
+
+fn get_main_and_sub_index(todos: &Vec<Todo>, index: usize) -> (Option<usize>, Option<usize>) {
+    let mut current_index = 0;
+    for (main_index, todo) in todos.iter().enumerate() {
+        if current_index == index {
+            return (Some(main_index), None);
+        }
+        current_index += 1;
+        if todo.expanded {
+            for (sub_index, _subtask) in todo.subtasks.iter().enumerate() {
+                if current_index == index {
+                    return (Some(main_index), Some(sub_index));
+                }
+                current_index += 1;
+            }
+        }
+    }
+    (None, None)
 }
