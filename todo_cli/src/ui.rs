@@ -124,7 +124,7 @@ pub fn draw_ui<B: Backend>(
 
     let instructions = match *input_mode {
         InputMode::Normal => {
-            String::from("q: Quit | a: Add | d: Delete | e: Edit | l: Toggle Subtasks | h: Hide Subtasks | o: View Details | <space><space>: Search | s: Sort | j: Down | k: Up | Enter: Toggle Done")
+            String::from("q: Quit | a: Add | d: Delete | e: Edit | <space><space>: Search | Enter: Toggle Done")
         }
         InputMode::AddingTitle | InputMode::EditingTitle(_) => format!("Enter title: {}", input_title),
         InputMode::AddingContent | InputMode::EditingContent(_) => format!("Enter content: {}", input_content),
@@ -179,7 +179,7 @@ pub fn draw_ui<B: Backend>(
                     .wrap(tui::widgets::Wrap { trim: true });
                 f.render_widget(details_block, chunks[1]);
             }
-            String::from("Press q to go back | <space>s: Add Subtask | j: Down | k: Up | Enter: Toggle Subtask Done")
+            String::from("Press q to go back | <space>s: Add Subtask | Enter: Toggle Subtask Done")
         }
         InputMode::ViewingSubtaskDetails(_, _) => String::from("Press q to go back | Enter: Toggle Subtask Done"),
         InputMode::Searching => String::from("Type to search | Enter to filter | Esc to cancel"),
